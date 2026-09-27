@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Send structured Markdown execution summary to Telegram."""
+"""Send structured HTML execution summary to Telegram."""
 
+import html
 import json
 import os
 import sys
 import urllib.request
+
 
 def main():
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -24,23 +26,29 @@ def main():
         try:
             with open(logfile, "r", encoding="utf-8", errors="replace") as f:
                 lines = f.readlines()
-                summary = "".join(lines[-12:]).strip()
+                summary = "".join(lines[-10:]).strip()
         except Exception as e:
             summary = f"Error reading log: {e}"
 
     icon = "✅" if status == "success" else "❌"
+    safe_title = html.escape(title)
+    safe_status = html.escape(status)
+    safe_target = html.escape(target)
+    safe_trigger = html.escape(trigger)
+    safe_summary = html.escape(summary)
+
     text = (
-        f"{icon} *GitHub Actions: {title}*\n"
-        f"*Status:* {status}\n"
-        f"*Target:* `{target}`\n"
-        f"*Trigger:* {trigger}\n\n"
-        f"```\n{summary}\n```"
+        f"{icon} <b>GitHub Actions: {safe_title}</b>\n\n"
+        f"<b>Status:</b> {safe_status}\n"
+        f"<b>Target:</b> <code>{safe_target}</code>\n"
+        f"<b>Trigger:</b> {safe_trigger}\n\n"
+        f"<pre>{safe_summary}</pre>"
     )
 
     payload = json.dumps({
         "chat_id": chat_id,
         "text": text,
-        "parse_mode": "Markdown",
+        "parse_mode": "HTML",
     }).encode("utf-8")
 
     req = urllib.request.Request(
@@ -54,6 +62,7 @@ def main():
     except Exception as e:
         print(f"Failed to deliver Telegram notification: {e}")
     return 0
+
 
 if __name__ == "__main__":
     sys.exit(main())
