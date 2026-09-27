@@ -1,0 +1,246 @@
+{
+  "$schema": "./repos.schema.json",
+  "schema_version": 1,
+  "defaults": {
+    "enabled": true,
+    "default_branch": null,
+    "clone_depth": 30,
+    "modes": {
+      "observer": true,
+      "pr": true,
+      "feature": true,
+      "curate": true
+    },
+    "thresholds": {
+      "stale_days": 90,
+      "warn_stale_days": 30,
+      "stale_pr_days": 30,
+      "stale_branch_days": 60,
+      "outdated_major_is_urgent": true
+    },
+    "docs": {
+      "require_readme": true,
+      "require_badges": true,
+      "require_setup_guide": true,
+      "setup_guide_globs": [
+        "CONTRIBUTING.md",
+        "docs/CONTRIBUTING.md",
+        "SETUP.md",
+        "docs/setup.md",
+        "docs/getting-started.md",
+        "docs/installation.md",
+        "INSTALL.md"
+      ],
+      "check_links": true,
+      "skip_link_prefixes": [
+        "mailto:",
+        "tel:",
+        "data:",
+        "javascript:",
+        "#"
+      ],
+      "skip_link_suffixes": [
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".svg",
+        ".webp",
+        ".ico",
+        ".pdf",
+        ".zip"
+      ],
+      "skip_link_domains": []
+    },
+    "dependencies": {
+      "enabled": true,
+      "check_outdated": true,
+      "auto_bump_patch": true,
+      "allow_major_bumps": false,
+      "allow_minor_bumps": false,
+      "max_bumps_per_run": 10,
+      "npm_registry": "https://registry.npmjs.org"
+    },
+    "quality": {
+      "format_on_pr": true,
+      "auto_fix_lint": true,
+      "run_tests_on_pr": true,
+      "test_timeout_seconds": 900
+    },
+    "skills": {
+      "search": true,
+      "install": true,
+      "generate": true,
+      "max_search_results": 5
+    },
+    "labels": {
+      "maintenance": "chore",
+      "audit": "maintenance-audit"
+    }
+  },
+  "repositories": [
+    {
+      "name": "repo-maintainer",
+      "url": "https://github.com/knarayanareddy/repo-maintainer.git",
+      "enabled": true,
+      "notes": "Self-hosted defaults. Set to this repo once pushed, or remove for external-only runs. Maintenance only: it has no curator recipe, so --mode curate skips it.",
+      "modes": {
+        "observer": true,
+        "pr": true,
+        "feature": true,
+        "curate": false
+      }
+    },
+    {
+      "name": "knarayanareddy/WebsitedesignandPrompts",
+      "url": "https://github.com/knarayanareddy/WebsitedesignandPrompts.git",
+      "enabled": true,
+      "default_branch": "main",
+      "clone_depth": 30,
+      "notes": "Template gallery. Each run ships five new design concepts as standalone folders (index.html, ADAPTED_PROMPT.md, README.md) and indexes them in the root README.",
+      "modes": {
+        "observer": true,
+        "pr": true,
+        "feature": false,
+        "curate": true
+      },
+      "curator": {
+        "recipe": "web-templates",
+        "options": {
+          "items_per_run": 5,
+          "llm": true
+        }
+      },
+      "docs": {
+        "require_setup_guide": false
+      }
+    },
+    {
+      "name": "knarayanareddy/AI-Arsenal",
+      "url": "https://github.com/knarayanareddy/AI-Arsenal.git",
+      "enabled": true,
+      "default_branch": "main",
+      "clone_depth": 30,
+      "notes": "Machine-readable encyclopedia of AI engineering. Each run authors schema-valid knowledge entries and leaves every unrelated file untouched.",
+      "modes": {
+        "observer": true,
+        "pr": true,
+        "feature": false,
+        "curate": true
+      },
+      "curator": {
+        "recipe": "ai-arsenal",
+        "options": {
+          "items_per_run": 3,
+          "min_stars": 800,
+          "llm": true
+        }
+      },
+      "docs": {
+        "require_setup_guide": false
+      }
+    },
+    {
+      "name": "knarayanareddy/gitscour",
+      "url": "https://github.com/knarayanareddy/gitscour.git",
+      "enabled": true,
+      "default_branch": "main",
+      "clone_depth": 10,
+      "notes": "50,000+ repository catalogue. Each run harvests newly trending 500+ star repositories through the repo's own pipeline, normalises them, re-shards, and verifies data integrity.",
+      "modes": {
+        "observer": true,
+        "pr": true,
+        "feature": false,
+        "curate": true
+      },
+      "curator": {
+        "recipe": "gitscour",
+        "options": {
+          "min_stars": 500,
+          "max_new": 400,
+          "prefer_pipeline": true,
+          "harvest_timeout": 900
+        }
+      },
+      "thresholds": {
+        "stale_days": 120
+      },
+      "docs": {
+        "require_setup_guide": false
+      }
+    },
+    {
+      "name": "knarayanareddy/AI-Daily",
+      "url": "https://github.com/knarayanareddy/AI-Daily.git",
+      "enabled": true,
+      "default_branch": "main",
+      "clone_depth": 30,
+      "notes": "Calm daily briefing. Each run mints data/candidates/<date>/edition-<N>-daily-curation-<YYYYMMDD>.json and refreshes data/archive.json so the reader feed stays current.",
+      "modes": {
+        "observer": true,
+        "pr": true,
+        "feature": false,
+        "curate": true
+      },
+      "curator": {
+        "recipe": "ai-daily",
+        "options": {
+          "story_count": 25,
+          "window_hours": 24,
+          "llm": true
+        }
+      },
+      "docs": {
+        "require_setup_guide": false
+      }
+    },
+    {
+      "name": "knarayanareddy/toolscour",
+      "url": "https://github.com/knarayanareddy/toolscour.git",
+      "enabled": true,
+      "default_branch": "main",
+      "clone_depth": 10,
+      "notes": "3D spatial explorer for 11,000+ AI tools. Each run ingests newly discovered tools/models/runtimes/agents and re-shards the two-tier spatial index.",
+      "modes": {
+        "observer": true,
+        "pr": true,
+        "feature": false,
+        "curate": true
+      },
+      "curator": {
+        "recipe": "toolscour",
+        "options": {
+          "min_stars": 500,
+          "max_new": 300,
+          "harvest_pages": 3,
+          "include_hf": true,
+          "pipeline_timeout": 900
+        }
+      },
+      "thresholds": {
+        "stale_days": 120
+      },
+      "docs": {
+        "require_setup_guide": false
+      }
+    },
+    {
+      "name": "sindresorhus/slugify",
+      "url": "https://github.com/sindresorhus/slugify.git",
+      "enabled": false,
+      "notes": "Disabled example. Flip \"enabled\" to true (or --repo slugify) to include in runs.",
+      "modes": {
+        "observer": true,
+        "pr": false,
+        "feature": false,
+        "curate": false
+      },
+      "thresholds": {
+        "stale_days": 180
+      },
+      "docs": {
+        "require_badges": false
+      }
+    }
+  ]
+}

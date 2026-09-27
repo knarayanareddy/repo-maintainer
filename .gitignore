@@ -1,0 +1,9 @@
+logs/
+reports/
+workspace/
+*.lock
+__pycache__/
+*.pyc
+.DS_Store
+.env
+*.env

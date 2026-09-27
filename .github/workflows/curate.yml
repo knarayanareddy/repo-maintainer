@@ -1,0 +1,128 @@
+name: Autonomous Multi-Repo Curation
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: "Target repository to curate (or 'all' for all 5 repos)"
+        type: choice
+        required: true
+        default: "all"
+        options:
+          - "all"
+          - "knarayanareddy/WebsitedesignandPrompts"
+          - "knarayanareddy/AI-Arsenal"
+          - "knarayanareddy/gitscour"
+          - "knarayanareddy/AI-Daily"
+          - "knarayanareddy/toolscour"
+      dry_run:
+        description: "Dry run mode (preview only, no git writes or pushes)"
+        type: boolean
+        required: false
+        default: false
+      no_llm:
+        description: "Force deterministic offline fallback (skip LLM calls)"
+        type: boolean
+        required: false
+        default: false
+  schedule:
+    # Runs daily at 07:17 UTC (09:17 AM CEST) matching local schedule
+    - cron: '17 7 * * *'
+
+jobs:
+  curate:
+    name: Curate Repositories
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repo Maintainer
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Authenticate GitHub CLI & Git
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+        run: |
+          echo "$GH_PAT" | gh auth login --with-token
+          git config --global user.name "Autonomous Repo Maintainer"
+          git config --global user.email "repo-maintainer@local.dev"
+          gh auth status
+
+      - name: Run Sequential Daily Curator
+        id: run_curation
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          EXTRA_ARGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --dry-run"
+          fi
+          if [ "${{ github.event.inputs.no_llm }}" = "true" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --no-llm"
+          fi
+          if [ -n "${{ github.event.inputs.repo }}" ] && [ "${{ github.event.inputs.repo }}" != "all" ]; then
+            EXTRA_ARGS="$EXTRA_ARGS --repo ${{ github.event.inputs.repo }}"
+          fi
+
+          echo "Starting daily_runner with args: $EXTRA_ARGS..."
+          python3 daily_runner.py --interval 15 $EXTRA_ARGS 2>&1 | tee curate.log
+
+      - name: Notify Telegram on Result
+        if: always()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_STATUS: ${{ job.status }}
+          REPO_TARGET: ${{ github.event.inputs.repo || 'all (scheduled)' }}
+        run: |
+          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+            ICON="✅"
+            if [ "$JOB_STATUS" != "success" ]; then
+              ICON="❌"
+            fi
+            
+            SUMMARY=$(tail -n 10 curate.log 2>/dev/null || echo "No log captured.")
+            TEXT="${ICON} *GitHub Actions: Repo Curation Complete*
+*Status:* ${JOB_STATUS}
+*Target:* \`${REPO_TARGET}\`
+*Trigger:* ${{ github.event_name }}
+
+\`\`\`
+${SUMMARY}
+\`\`\`"
+
+            python3 -c "
+import os, json, urllib.request
+
+token = os.environ.get('TELEGRAM_BOT_TOKEN')
+chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+text = '''$TEXT'''
+
+payload = json.dumps({
+    'chat_id': chat_id,
+    'text': text,
+    'parse_mode': 'Markdown'
+}).encode('utf-8')
+
+req = urllib.request.Request(
+    f'https://api.telegram.org/bot{token}/sendMessage',
+    data=payload,
+    headers={'Content-Type': 'application/json'}
+)
+try:
+    with urllib.request.urlopen(req) as resp:
+        print('Telegram notification sent successfully.')
+except Exception as e:
+    print('Failed to send Telegram alert:', e)
+"
+          fi

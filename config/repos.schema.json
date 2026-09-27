@@ -1,0 +1,255 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/knarayanareddy/repo-maintainer/config/repos.schema.json",
+  "title": "repo-maintainer target repository configuration",
+  "description": "Schema for config/repos.json. Per-repository blocks are deep-merged over 'defaults', so any subset of these keys may be overridden per repository. Note: draft-07 evaluates 'additionalProperties' per schema object, so a repository entry cannot be composed from a strict base object plus an identity object with allOf; 'defaults' and 'repository' therefore enumerate the shared keys explicitly.",
+  "type": "object",
+  "required": ["repositories"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Relative path to this schema file."
+    },
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Configuration schema version. Only 1 is supported."
+    },
+    "defaults": { "$ref": "#/definitions/defaults" },
+    "repositories": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Target repositories. Names must be unique.",
+      "items": { "$ref": "#/definitions/repository" }
+    }
+  },
+  "definitions": {
+    "defaults": {
+      "type": "object",
+      "description": "Base settings deep-merged into every repository entry.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "$ref": "#/definitions/enabled" },
+        "default_branch": { "$ref": "#/definitions/default_branch" },
+        "clone_depth": { "type": "integer", "minimum": 1 },
+        "modes": { "$ref": "#/definitions/modes" },
+        "thresholds": { "$ref": "#/definitions/thresholds" },
+        "docs": { "$ref": "#/definitions/docs" },
+        "dependencies": { "$ref": "#/definitions/dependencies" },
+        "quality": { "$ref": "#/definitions/quality" },
+        "skills": { "$ref": "#/definitions/skills" },
+        "labels": { "$ref": "#/definitions/labels" },
+        "curator": { "$ref": "#/definitions/curator" }
+      }
+    },
+    "repository": {
+      "type": "object",
+      "description": "One target repository: an identity block plus any subset of the shared settings.",
+      "required": ["name", "url"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Unique repository name, conventionally 'owner/repo'."
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^(https?://|git@|ssh://).+",
+          "description": "Clone URL for the repository."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form operator note explaining the entry."
+        },
+        "enabled": { "$ref": "#/definitions/enabled" },
+        "default_branch": { "$ref": "#/definitions/default_branch" },
+        "clone_depth": { "type": "integer", "minimum": 1 },
+        "modes": { "$ref": "#/definitions/modes" },
+        "thresholds": { "$ref": "#/definitions/thresholds" },
+        "docs": { "$ref": "#/definitions/docs" },
+        "dependencies": { "$ref": "#/definitions/dependencies" },
+        "quality": { "$ref": "#/definitions/quality" },
+        "skills": { "$ref": "#/definitions/skills" },
+        "labels": { "$ref": "#/definitions/labels" },
+        "curator": { "$ref": "#/definitions/curator" }
+      }
+    },
+    "enabled": {
+      "type": "boolean",
+      "description": "Whether this repository takes part in runs at all."
+    },
+    "default_branch": {
+      "type": ["string", "null"],
+      "description": "Override the auto-detected default branch."
+    },
+    "curator": {
+      "type": "object",
+      "description": "Binds this repository to a daily autonomous expansion recipe from curators/. Required for mode 'curate'. The recipe id must be registered in curators.REGISTRY; an unknown id is rejected by load_config and by --check-only.",
+      "additionalProperties": false,
+      "properties": {
+        "recipe": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "description": "Curator recipe id. Known ids: web-templates, ai-arsenal, gitscour, ai-daily, toolscour."
+        },
+        "options": {
+          "type": "object",
+          "description": "Recipe-specific knobs, read through CurationRecipe.option(). 'llm': false forces the deterministic offline path for this repository.",
+          "additionalProperties": {
+            "type": ["string", "number", "boolean", "null"]
+          }
+        },
+        "enabled": {
+          "type": "boolean",
+          "description": "Set false to keep the block as documentation while skipping curation for this repository."
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form operator note about what the recipe does each day."
+        }
+      }
+    },
+    "modes": {
+      "type": "object",
+      "description": "Per-phase enablement. A disabled phase is skipped for this repository.",
+      "additionalProperties": false,
+      "properties": {
+        "observer": {
+          "type": "boolean",
+          "description": "Phase 1: read-only health and staleness audit."
+        },
+        "pr": {
+          "type": "boolean",
+          "description": "Phase 2: automated non-destructive upkeep on a chore/daily-maintenance-* branch."
+        },
+        "feature": {
+          "type": "boolean",
+          "description": "Phase 3: feature proposals and skill expansion."
+        },
+        "curate": {
+          "type": "boolean",
+          "description": "Phase 4: autonomous daily expansion via the repository's curator recipe, delivered on a chore/daily-curation-* branch."
+        }
+      }
+    },
+    "thresholds": {
+      "type": "object",
+      "description": "Staleness thresholds in days.",
+      "additionalProperties": false,
+      "properties": {
+        "stale_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Days without a commit before the repo is flagged critical."
+        },
+        "warn_stale_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Days without a commit before a warning is raised."
+        },
+        "stale_pr_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Days without PR activity before a PR is flagged stale."
+        },
+        "stale_branch_days": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Days without commits before a remote branch is flagged stale."
+        },
+        "outdated_major_is_urgent": {
+          "type": "boolean",
+          "description": "Report outdated major versions as critical rather than warning."
+        }
+      }
+    },
+    "docs": {
+      "type": "object",
+      "description": "Documentation health audit settings.",
+      "additionalProperties": false,
+      "properties": {
+        "require_readme": { "type": "boolean" },
+        "require_badges": { "type": "boolean" },
+        "require_setup_guide": { "type": "boolean" },
+        "setup_guide_globs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Repository-relative paths accepted as a setup or contributing guide."
+        },
+        "check_links": { "type": "boolean" },
+        "skip_link_prefixes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Link prefixes excluded from the broken-link check."
+        },
+        "skip_link_suffixes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Link suffixes excluded from the broken-link check."
+        },
+        "skip_link_domains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "External domains excluded from link checking."
+        }
+      }
+    },
+    "dependencies": {
+      "type": "object",
+      "description": "Dependency audit and bump settings.",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "check_outdated": { "type": "boolean" },
+        "auto_bump_patch": {
+          "type": "boolean",
+          "description": "Allow automatic patch-level bumps in Phase 2."
+        },
+        "allow_major_bumps": {
+          "type": "boolean",
+          "description": "Allow major bumps. Leave false: majors can break callers."
+        },
+        "allow_minor_bumps": { "type": "boolean" },
+        "max_bumps_per_run": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Upper bound on dependency bumps applied in one run."
+        },
+        "npm_registry": { "type": "string" }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "description": "Formatting, linting, and test validation settings.",
+      "additionalProperties": false,
+      "properties": {
+        "format_on_pr": { "type": "boolean" },
+        "auto_fix_lint": { "type": "boolean" },
+        "run_tests_on_pr": {
+          "type": "boolean",
+          "description": "Run the test suite before opening a Phase 2 pull request."
+        },
+        "test_timeout_seconds": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "skills": {
+      "type": "object",
+      "description": "Phase 3 skill discovery, staging, and generation settings.",
+      "additionalProperties": false,
+      "properties": {
+        "search": { "type": "boolean" },
+        "install": { "type": "boolean" },
+        "generate": { "type": "boolean" },
+        "max_search_results": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "description": "Labels applied to pull requests when they already exist in the repo.",
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

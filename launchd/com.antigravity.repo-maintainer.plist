@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  repo-maintainer daily curation LaunchAgent (TEMPLATE).
+
+  Every __PLACEHOLDER__ marker in this file is substituted with a real
+  absolute path for the machine it is installed on. Render or install a
+  resolved copy with daily_runner.py; launchd/README.md documents the exact
+  commands. Never hand-edit the installed copy in ~/Library/LaunchAgents.
+
+  Why these settings
+  ==================
+
+  StartCalendarInterval
+      Fires once a day. launchd does not run a calendar job while the Mac is
+      asleep; instead it coalesces the missed fire and starts the job the
+      first time the machine wakes, so a laptop that is closed overnight
+      still curates that morning. This is the "active/awake" trigger.
+
+  RunAtLoad is false
+      Installing the agent must not immediately trigger a full run, which
+      would fire five repository pipelines at an arbitrary moment.
+
+  StandardOutPath and StandardErrorPath
+      launchd gives the job no terminal, so both streams are appended to
+      files. The runner also writes its own per-run log under logs/; these
+      two files capture launchd's own view of crashes and early failures.
+
+  ProcessType is Background
+      Keeps the job off the critical path of whatever the user is doing.
+
+  ThrottleInterval
+      launchd will not restart a failing job more often than once a minute,
+      which bounds the blast radius of a persistently broken recipe.
+
+  This job is a per-user LaunchAgent in ~/Library/LaunchAgents, not a system
+  LaunchDaemon. It only runs while the user is logged in, and it inherits the
+  user's PATH, git and gh credentials, and the Gemini key file.
+
+  Lint note: plutil deliberately REJECTS this template as it stands, because
+  __HOUR__ and __MINUTE__ sit inside integer elements. That is expected.
+  Lint the rendered copy instead, which is a valid property list. (XML also
+  forbids a double hyphen inside a comment, which is why the install commands
+  live in launchd/README.md rather than here.)
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>__LABEL__</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>__PYTHON__</string>
+        <string>__RUNNER__</string>
+        <string>--mode</string>
+        <string>curate</string>
+        <string>--interval</string>
+        <string>120</string>
+        <string>--timeout</string>
+        <string>3600</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>__REPO_PATH__</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- Absolute binaries: launchd gives a minimal PATH, so git, gh and
+             any Homebrew/Volta toolchain must be named explicitly. -->
+        <key>PATH</key>
+        <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <!-- Uncomment and fill in to pin a fine-grained token for the
+             harvest recipes instead of relying on the gh keyring.
+        <key>GITHUB_TOKEN</key>
+        <string>ghp_CHANGE_ME</string>
+        -->
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>__HOUR__</integer>
+        <key>Minute</key>
+        <integer>__MINUTE__</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <key>StandardOutPath</key>
+    <string>__LOG_DIR__/launchd.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>__LOG_DIR__/launchd.err.log</string>
+</dict>
+</plist>
