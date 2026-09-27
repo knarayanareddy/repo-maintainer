@@ -1,6 +1,6 @@
 name: Autonomous Multi-Repo Curation
 
-on:
+'on':
   workflow_dispatch:
     inputs:
       repo:
@@ -84,45 +84,6 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           JOB_STATUS: ${{ job.status }}
           REPO_TARGET: ${{ github.event.inputs.repo || 'all (scheduled)' }}
+          TRIGGER_NAME: ${{ github.event_name }}
         run: |
-          if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
-            ICON="✅"
-            if [ "$JOB_STATUS" != "success" ]; then
-              ICON="❌"
-            fi
-            
-            SUMMARY=$(tail -n 10 curate.log 2>/dev/null || echo "No log captured.")
-            TEXT="${ICON} *GitHub Actions: Repo Curation Complete*
-*Status:* ${JOB_STATUS}
-*Target:* \`${REPO_TARGET}\`
-*Trigger:* ${{ github.event_name }}
-
-\`\`\`
-${SUMMARY}
-\`\`\`"
-
-            python3 -c "
-import os, json, urllib.request
-
-token = os.environ.get('TELEGRAM_BOT_TOKEN')
-chat_id = os.environ.get('TELEGRAM_CHAT_ID')
-text = '''$TEXT'''
-
-payload = json.dumps({
-    'chat_id': chat_id,
-    'text': text,
-    'parse_mode': 'Markdown'
-}).encode('utf-8')
-
-req = urllib.request.Request(
-    f'https://api.telegram.org/bot{token}/sendMessage',
-    data=payload,
-    headers={'Content-Type': 'application/json'}
-)
-try:
-    with urllib.request.urlopen(req) as resp:
-        print('Telegram notification sent successfully.')
-except Exception as e:
-    print('Failed to send Telegram alert:', e)
-"
-          fi
+          python3 scripts/notify_telegram.py "Repo Curation" curate.log
