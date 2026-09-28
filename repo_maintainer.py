@@ -3804,10 +3804,10 @@ class Maintainer:
                     return outcome
                 outcome.messages.append("post-condition verification passed")
 
-            if not result.changed and not ws.has_changes():
+            if not ws.has_changes():
                 outcome.status = "no-changes"
                 outcome.messages.append(
-                    "curation found nothing new for today; no pull request was opened"
+                    "curation found nothing new for today; no pull request was needed"
                 )
                 return outcome
 
