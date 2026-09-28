@@ -86,6 +86,31 @@ def load_api_key() -> Optional[str]:
     return None
 
 
+def load_openrouter_keys() -> List[str]:
+    """Resolve all available OpenRouter keys from env and key files."""
+    keys: List[str] = []
+    for k, v in os.environ.items():
+        if k.startswith("OPENROUTER_API_KEY") and v.strip():
+            clean = v.strip().strip("'\"")
+            if clean not in keys:
+                keys.append(clean)
+    for keypath in [KEY_FILE, Path("~/.hermes/.env")]:
+        try:
+            raw = keypath.expanduser().read_text(encoding="utf-8")
+            for line in raw.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                match = _ASSIGNMENT_RE.match(line)
+                if match:
+                    k, v = match.group(1), match.group(2).strip().strip("'\"")
+                    if k.startswith("OPENROUTER_API_KEY") and v and v not in keys:
+                        keys.append(v)
+        except Exception:
+            pass
+    return keys
+
+
 @dataclass
 class GeminiStats:
     """Request accounting for one client instance."""
@@ -256,11 +281,16 @@ class GeminiClient:
         json_mode: bool = False,
         max_output_tokens: int = 4096,
         temperature: float = 0.8,
-        key: str = "",
+        keys: Optional[List[str]] = None,
     ) -> Optional[str]:
-        models = ["stealth/space-bunny-alpha", "meta-llama/llama-3.3-70b-instruct:free"]
+        if not keys:
+            keys = load_openrouter_keys()
+        if not keys:
+            return None
+
+        model = "stealth/space-bunny-alpha"
         endpoint = "https://openrouter.ai/api/v1/chat/completions"
-        for model in models:
+        for idx, key in enumerate(keys):
             try:
                 body: Dict[str, Any] = {
                     "model": model,
@@ -283,14 +313,14 @@ class GeminiClient:
                     },
                     method="POST",
                 )
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=120) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 choice = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 if choice and choice.strip():
-                    self.log(f"ok via OpenRouter/{model}")
+                    self.log(f"ok via OpenRouter/{model} [key {idx+1}/{len(keys)}]")
                     return choice.strip()
             except Exception as e:
-                self.log(f"OpenRouter {model} failed: {e}; trying next")
+                self.log(f"OpenRouter {model} key {idx+1} failed: {e}; trying next key in pool")
                 continue
         return None
 
@@ -304,15 +334,15 @@ class GeminiClient:
         temperature: float = 0.8,
     ) -> Optional[str]:
         """Run one completion, returning text or ``None`` on any failure."""
-        openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
-        if openrouter_key:
+        keys = load_openrouter_keys()
+        if keys:
             res = self._complete_openrouter(
                 prompt,
                 system=system,
                 json_mode=json_mode,
                 max_output_tokens=max_output_tokens,
                 temperature=temperature,
-                key=openrouter_key,
+                keys=keys,
             )
             if res:
                 return res

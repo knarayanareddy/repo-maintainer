@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .llm import GeminiClient, load_api_key
+from .llm import GeminiClient, load_api_key, load_openrouter_keys
 
 __all__ = ["EvaluationVerdict", "CurationEvaluator", "evaluate_curation"]
 
@@ -345,16 +345,16 @@ class CurationEvaluator:
             return None
 
     def _evaluate_with_openrouter_jev(self, payload_summary: str) -> Optional[EvaluationVerdict]:
-        """Query TypeSafe Jev model via OpenRouter."""
-        key = self.openrouter_key
-        if not key:
+        """Query TypeSafe Jev model via OpenRouter stealth/space-bunny-alpha across all pooled keys."""
+        keys = load_openrouter_keys()
+        if not keys and self.openrouter_key:
+            keys = [self.openrouter_key]
+        if not keys:
             return None
 
-        self.log("invoking TypeSafe Jev via OpenRouter...")
-        models_to_try = [
-            "stealth/space-bunny-alpha",
-            "meta-llama/llama-3.3-70b-instruct:free",
-        ]
+        self.log(f"invoking TypeSafe Jev via OpenRouter with {len(keys)} pooled keys on stealth/space-bunny-alpha...")
+        model = "stealth/space-bunny-alpha"
+        endpoint = "https://openrouter.ai/api/v1/chat/completions"
 
         system_prompt = (
             "You are Jev, a deterministic System One decision model. "
@@ -369,7 +369,7 @@ class CurationEvaluator:
             "- issues: array of strings naming specific deficiencies if any"
         )
 
-        for model in models_to_try:
+        for idx, key in enumerate(keys):
             body = {
                 "model": model,
                 "messages": [
@@ -392,7 +392,7 @@ class CurationEvaluator:
             )
 
             try:
-                with urllib.request.urlopen(req, timeout=30) as resp:
+                with urllib.request.urlopen(req, timeout=45) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
                 choice = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 parsed = json.loads(choice)
@@ -406,17 +406,12 @@ class CurationEvaluator:
                     quality_score=int(parsed.get("quality_score", 5)),
                     reason=str(parsed.get("reason", "Evaluated by Jev via OpenRouter")),
                     issues=list(parsed.get("issues", [])),
-                    evaluator_model=f"openrouter/{model}",
+                    evaluator_model=f"openrouter/{model} [key {idx+1}/{len(keys)}]",
                 )
             except Exception as exc:
-                self.log(f"Jev OpenRouter {model} failed: {exc}; trying next")
+                self.log(f"Jev OpenRouter {model} key {idx+1} failed: {exc}; rotating to next key")
                 continue
-        except urllib.error.HTTPError as exc:
-            self.log(f"Jev OpenRouter HTTP {exc.code} ({exc.reason}); cascading to Gemini Flash")
-            return None
-        except Exception as exc:
-            self.log(f"Jev OpenRouter call failed: {exc}; cascading to Gemini Flash")
-            return None
+        return None
 
     # -- Gemini Flash Evaluation Cascade ------------------------------------ #
 
