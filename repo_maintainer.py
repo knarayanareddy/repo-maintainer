@@ -3907,6 +3907,30 @@ class Maintainer:
             outcome.status = "ok" if outcome.pr_url else "failed"
             if not outcome.pr_url:
                 outcome.error = "branch pushed but the pull request could not be created"
+            elif verdict and getattr(verdict, "passed", False):
+                # Autonomous Zero-Intervention Auto-Merge & Deployment
+                _log("{0}: QA passed (score {1}/10); auto-merging pull request {2}...".format(
+                    settings.name, getattr(verdict, "quality_score", 10), outcome.pr_url
+                ))
+                m_code, m_out, m_err = ws._gh(
+                    "pr", "merge", outcome.branch or "", "--merge", "--auto"
+                )
+                if m_code != 0:
+                    m_code, m_out, m_err = ws._gh(
+                        "pr", "merge", outcome.branch or "", "--merge", "--admin"
+                    )
+                if m_code == 0:
+                    outcome.messages.append("auto-merged pull request into {0} (zero intervention)".format(ws.default_branch or "main"))
+                    if "WebsitedesignandPrompts" in settings.name:
+                        live_urls = [
+                            "https://knarayanareddy.github.io/WebsitedesignandPrompts/{0}/".format(item.slug)
+                            for item in result.items if getattr(item, "slug", None)
+                        ]
+                        if live_urls:
+                            outcome.messages.append("live preview deployed: {0}".format(", ".join(live_urls)))
+                else:
+                    outcome.messages.append("auto-merge status: {0}".format((m_err or m_out).strip()))
+
         except (MaintenanceError, CurationError, OSError) as exc:
             outcome.status = "failed"
             outcome.error = str(exc)

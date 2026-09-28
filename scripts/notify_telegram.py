@@ -22,11 +22,18 @@ def main():
     trigger = os.environ.get("TRIGGER_NAME", "workflow")
 
     summary = "No log captured."
+    live_links = []
     if os.path.exists(logfile):
         try:
             with open(logfile, "r", encoding="utf-8", errors="replace") as f:
-                lines = f.readlines()
-                summary = "".join(lines[-10:]).strip()
+                full_content = f.read()
+                lines = full_content.splitlines()
+                summary = "\n".join(lines[-10:]).strip()
+                import re
+                for url in re.findall(r"https://[a-zA-Z0-9_\-\.]+github\.io[^\s\"'>,\)]+", full_content):
+                    clean_url = url.rstrip(".")
+                    if clean_url not in live_links:
+                        live_links.append(clean_url)
         except Exception as e:
             summary = f"Error reading log: {e}"
 
@@ -40,11 +47,17 @@ def main():
     safe_trigger = html.escape(trigger)
     safe_summary = html.escape(summary)
 
+    live_block = ""
+    if live_links:
+        link_items = "\n".join([f"• <a href=\"{u}\">{u.split('/')[-2] if u.split('/')[-2] else 'Showcase Gallery'}</a>" for u in live_links[:10]])
+        live_block = f"\n\n<b>🌐 Live Demos Deployed:</b>\n{link_items}\n"
+
     text = (
         f"{icon} <b>GitHub Actions: {safe_title}</b>\n\n"
         f"<b>Status:</b> {safe_status}\n"
         f"<b>Target:</b> <code>{safe_target}</code>\n"
-        f"<b>Trigger:</b> {safe_trigger}\n\n"
+        f"<b>Trigger:</b> {safe_trigger}"
+        f"{live_block}\n"
         f"<pre>{safe_summary}</pre>"
     )
 

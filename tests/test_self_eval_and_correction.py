@@ -72,7 +72,7 @@ class TestEvaluatorHeuristics(unittest.TestCase):
             json.dumps({"name": "AgentKit", "stars": 1500, "description": "High performance toolkit"}),
             encoding="utf-8"
         )
-        evaluator = CurationEvaluator()
+        evaluator = CurationEvaluator(typesafe_key="", gemini_key="", openrouter_key="")
         verdict = evaluator.evaluate(
             repo_name="test/repo",
             workspace_path=self.ws,
@@ -81,6 +81,7 @@ class TestEvaluatorHeuristics(unittest.TestCase):
         )
         self.assertFalse(verdict.is_false_positive)
         self.assertTrue(verdict.quality_score >= 6)
+
 
 
 class TestSelfCorrector(unittest.TestCase):

@@ -80,13 +80,25 @@ class CurationEvaluator:
         gemini_key: Optional[str] = None,
         log: Optional[Callable[[str], None]] = None,
     ) -> None:
-        self.openrouter_key = openrouter_key or os.environ.get("OPENROUTER_API_KEY", "").strip()
-        self.typesafe_key = typesafe_key or os.environ.get("TYPESAFE_API_KEY", "").strip()
-        self.gemini_key = gemini_key or load_api_key()
+        if openrouter_key is not None:
+            self.openrouter_key = openrouter_key
+        else:
+            self.openrouter_key = os.environ.get("OPENROUTER_API_KEY", "").strip()
+
+        if typesafe_key is not None:
+            self.typesafe_key = typesafe_key
+        else:
+            self.typesafe_key = os.environ.get("TYPESAFE_API_KEY", "").strip()
+
+        if gemini_key is not None:
+            self.gemini_key = gemini_key
+        else:
+            self.gemini_key = load_api_key()
+
         self._log_fn = log
 
-        # Try loading openrouter key from ~/.hermes/idea-dump/keys.env if missing
-        if not self.openrouter_key:
+        # Try loading keys from ~/.hermes/idea-dump/keys.env only if not explicitly set
+        if openrouter_key is None and typesafe_key is None and not self.openrouter_key and not self.typesafe_key:
             self._load_fallback_keys()
 
     def _load_fallback_keys(self) -> None:
