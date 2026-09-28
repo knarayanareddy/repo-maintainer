@@ -692,7 +692,7 @@ class CurationRecipe(abc.ABC):
         """Locate ``node`` on PATH, or ``None`` when unavailable."""
         candidate = self.option("node", "node") or "node"
         code, out, _err = run([candidate, "--version"], timeout=20)
-        return out.strip() if code == 0 and out.strip() else None
+        return candidate if code == 0 else None
 
     def github_search(
         self,

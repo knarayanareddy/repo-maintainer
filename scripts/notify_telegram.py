@@ -30,9 +30,12 @@ def main():
         except Exception as e:
             summary = f"Error reading log: {e}"
 
-    icon = "✅" if status == "success" else "❌"
+    has_failed = (status != "success") or ("failed" in summary.lower() and "0 failed" not in summary.lower())
+    icon = "❌" if has_failed else "✅"
+    display_status = "failure" if has_failed else status
+
     safe_title = html.escape(title)
-    safe_status = html.escape(status)
+    safe_status = html.escape(display_status)
     safe_target = html.escape(target)
     safe_trigger = html.escape(trigger)
     safe_summary = html.escape(summary)

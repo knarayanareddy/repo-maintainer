@@ -29,7 +29,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 __all__ = ["LlmError", "GeminiClient", "load_api_key", "DEFAULT_MODEL", "KEY_FILE"]
 
 #: Free-tier model alias; resolves to the current Gemini Flash release.
-DEFAULT_MODEL = "gemini-flash-latest"
+DEFAULT_MODEL = "gemini-3.5-flash"
 
 #: Endpoint template for ``generateContent``.
 API_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"

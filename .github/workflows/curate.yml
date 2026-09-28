@@ -46,23 +46,33 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Authenticate GitHub CLI & Git
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           echo "$GH_PAT" | gh auth login --with-token
+          gh auth setup-git
+          git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
           git config --global user.name "Autonomous Repo Maintainer"
           git config --global user.email "repo-maintainer@local.dev"
           gh auth status
 
       - name: Run Sequential Daily Curator
         id: run_curation
+        shell: bash
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GH_TOKEN: ${{ secrets.GH_PAT }}
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
+          set -o pipefail
           EXTRA_ARGS=""
           if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
             EXTRA_ARGS="$EXTRA_ARGS --dry-run"

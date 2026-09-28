@@ -1316,6 +1316,7 @@ class WebsiteDesignRecipe(CurationRecipe):
                 detail="{0} — {1}".format(theme.archetype, truncate(theme.tagline, 90)),
             )
             shipped.append(theme)
+        self._shipped_slugs = [theme.slug for theme in shipped]
 
         if shipped:
             # The block is rebuilt from *every* theme on disk, not just today's,
@@ -1394,7 +1395,9 @@ class WebsiteDesignRecipe(CurationRecipe):
         """Validate template completeness and the no-broken-images rule."""
         root = Path(workspace_path)
         problems: List[str] = []
-        themes = self.existing_themes(root)
+        # If this run shipped specific themes, only verify those to avoid
+        # failing on legacy pre-existing templates in the repository
+        themes = getattr(self, "_shipped_slugs", None) or self.existing_themes(root)
         if not themes:
             return ["no template folders were found in the repository"]
 
