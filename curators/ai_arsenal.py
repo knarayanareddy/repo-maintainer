@@ -713,9 +713,10 @@ class AiArsenalRecipe(CurationRecipe):
                     problems.append(
                         "{0}: '{1}' is not in the {2} vocabulary".format(rel, value, key)
                     )
-        return [item for item in problems if not item.startswith("note:")] + [
-            item for item in problems if item.startswith("note:")
-        ]
+        for item in problems:
+            if item.startswith("note:"):
+                self.log(item)
+        return [item for item in problems if not item.startswith("note:")]
 
     def _run_validator(self, root: Path, node: str, validator: Path) -> Tuple[int, str, str]:
         """Invoke the repository's own schema validator on changed files."""
