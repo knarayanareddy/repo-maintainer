@@ -66,6 +66,29 @@ class TestEvaluatorHeuristics(unittest.TestCase):
         self.assertTrue(verdict.is_false_positive)
         self.assertFalse(verdict.passed)
 
+    def test_reject_cookie_cutter_structural_duplication(self):
+        t1 = self.ws / "t1.html"
+        t1.write_text(
+            '<div class="site-header site-nav hero eyebrow button stats panel site-footer">Theme 1</div>',
+            encoding="utf-8"
+        )
+        t2 = self.ws / "t2.html"
+        t2.write_text(
+            '<div class="site-header site-nav hero eyebrow button stats panel site-footer">Theme 2 (different color)</div>',
+            encoding="utf-8"
+        )
+        evaluator = CurationEvaluator(typesafe_key="", gemini_key="", openrouter_key="")
+        verdict = evaluator.evaluate(
+            repo_name="test/repo",
+            workspace_path=self.ws,
+            files_touched=["t1.html", "t2.html"],
+            items_summary=[{"title": "Theme 1"}, {"title": "Theme 2"}],
+        )
+        self.assertTrue(verdict.is_false_positive)
+        self.assertFalse(verdict.passed)
+        self.assertTrue(any("Cookie-cutter" in issue for issue in verdict.issues))
+
+
     def test_pass_genuine_content(self):
         good_file = self.ws / "tool.json"
         good_file.write_text(

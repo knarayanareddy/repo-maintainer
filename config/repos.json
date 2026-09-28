@@ -102,7 +102,7 @@
         "observer": true,
         "pr": true,
         "feature": false,
-        "curate": true
+        "curate": false
       },
       "curator": {
         "recipe": "web-templates",

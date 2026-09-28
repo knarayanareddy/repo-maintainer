@@ -199,6 +199,34 @@ class CurationEvaluator:
                 issues.append(f"File {rel_path} contains multiple suspicious placeholder tokens ({suspicious_count} found)")
                 is_false_pos = True
 
+        # Check for structural homogeneity (cookie-cutter duplication across files)
+        html_files = [p for p in checked_files if p.endswith(".html")]
+        if len(html_files) >= 2:
+            class_sets = []
+            for h in html_files:
+                p = workspace_path / h
+                if p.is_file():
+                    try:
+                        c_text = p.read_text(encoding="utf-8", errors="replace")
+                        classes = set()
+                        for c_match in re.findall(r'class=["\']([^"\']+)["\']', c_text):
+                            classes.update(c_match.split())
+                        if classes:
+                            class_sets.append(classes)
+                    except Exception:
+                        pass
+            if len(class_sets) >= 2:
+                common_classes = set.intersection(*class_sets)
+                max_classes = max(len(s) for s in class_sets)
+                if max_classes >= 5 and (len(common_classes) / max_classes) >= 0.70:
+                    similarity_pct = int((len(common_classes) / max_classes) * 100)
+                    issues.append(
+                        f"Cookie-cutter structural duplication detected across {len(class_sets)} HTML files "
+                        f"({similarity_pct}% identical CSS classes: {sorted(list(common_classes))[:8]}...). "
+                        "Every template must have a bespoke layout and distinct interactive architecture."
+                    )
+                    is_false_pos = True
+
         return issues, is_false_pos
 
     # -- Jev Evaluation (Native TypeSafe & OpenRouter) ---------------------- #
@@ -218,10 +246,18 @@ class CurationEvaluator:
             "questions": {
                 "is_false_positive": {
                     "type": "noul",
-                    "instructions": "Does this work contain hollow stubs, 0-byte files, or superficial mock placeholders that give a false impression of success?",
+                    "instructions": "Does this work contain hollow stubs, 0-byte files, superficial mock placeholders, or cookie-cutter repetitive templates that give a false impression of success?",
                     "criteria": {
-                        "true": "Contains hollow mock stubs, unfinished TODOs, or empty files",
-                        "false": "Substantive, functional, real code or data"
+                        "true": "Contains hollow mock stubs, unfinished TODOs, empty files, or repetitive cookie-cutter templates with superficial color swaps",
+                        "false": "Substantive, genuine, unique, and functionally distinct code or data"
+                    }
+                },
+                "is_cookie_cutter": {
+                    "type": "noul",
+                    "instructions": "Are the items or templates repetitive cookie-cutter duplicates that share the same layout structure with only superficial color or text differences?",
+                    "criteria": {
+                        "true": "Repetitive, cookie-cutter, same layout with color or token swaps",
+                        "false": "Bespoke, distinct, unique architectural layout"
                     }
                 },
                 "verdict": {
@@ -230,18 +266,18 @@ class CurationEvaluator:
                     "criteria": {
                         "APPROVED": "High quality, genuine code ready for merge",
                         "NEEDS_CORRECTION": "Has issues, missing fields, or stub sections that need self-correction",
-                        "REJECTED": "Completely invalid or broken"
+                        "REJECTED": "Completely invalid, repetitive, or broken"
                     }
                 },
                 "quality_score": {
                     "type": "score",
-                    "instructions": "Rate the overall quality and completeness of this work on a scale from 1 to 5.",
+                    "instructions": "Rate the overall quality, uniqueness, and completeness of this work on a scale from 1 to 5.",
                     "criteria": [
-                        "1 - Broken or zero-byte stubs",
-                        "2 - Shallow placeholder content",
+                        "1 - Broken, zero-byte stubs, or cookie-cutter duplicates with only color swaps",
+                        "2 - Shallow placeholder content or generic boilerplate",
                         "3 - Basic minimal implementation",
-                        "4 - High quality substantive content",
-                        "5 - Exceptional production-grade work"
+                        "4 - High quality substantive content with unique layout",
+                        "5 - Exceptional production-grade work matching award-winning standards"
                     ]
                 }
             }
@@ -264,10 +300,14 @@ class CurationEvaluator:
 
             answers = data.get("answers", {})
             fp_answer = answers.get("is_false_positive", {})
+            cc_answer = answers.get("is_cookie_cutter", {})
             verdict_answer = answers.get("verdict", {})
             score_answer = answers.get("quality_score", {})
 
-            is_fp = float(fp_answer.get("noul", 0.0)) >= 0.5
+            fp_prob = float(fp_answer.get("noul", 0.0))
+            cc_prob = float(cc_answer.get("noul", 0.0))
+            is_fp = (fp_prob >= 0.5) or (cc_prob >= 0.5)
+
             verdict_str = str(verdict_answer.get("choice", "NEEDS_CORRECTION")).upper()
             confidence = float(verdict_answer.get("confidence", 0.0))
             raw_score = float(score_answer.get("score", 2.5))
@@ -275,14 +315,16 @@ class CurationEvaluator:
             model_id = str(data.get("model", "jev-latest"))
 
             issues: List[str] = []
-            if is_fp:
-                issues.append(f"Jev flagged output as likely false-positive (prob={fp_answer.get('noul', 0.0):.2f})")
+            if fp_prob >= 0.5:
+                issues.append(f"Jev flagged output as likely false-positive (prob={fp_prob:.2f})")
+            if cc_prob >= 0.5:
+                issues.append(f"Jev flagged output as cookie-cutter duplication (prob={cc_prob:.2f})")
             if scaled_score < 6:
                 issues.append(f"Jev assessed quality score as {scaled_score}/10 (below 6/10 floor)")
 
             reason_str = (
                 f"Jev decision: {verdict_str} (confidence: {confidence:.2f}, "
-                f"false-positive prob: {fp_answer.get('noul', 0.0):.2f}, "
+                f"false-positive prob: {fp_prob:.2f}, cookie-cutter prob: {cc_prob:.2f}, "
                 f"quality: {scaled_score}/10)"
             )
             self.log(f"Jev result: {verdict_str}, score={scaled_score}/10, model={model_id}")
