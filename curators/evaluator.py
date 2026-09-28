@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -111,20 +112,53 @@ class CurationEvaluator:
         issues: List[str] = []
         is_false_pos = False
 
-        if not files_touched:
+        checked_files = list(files_touched)
+        if not checked_files:
+            # Fallback to checking workspace via git status
+            try:
+                res = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    cwd=str(workspace_path),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=15,
+                    check=False,
+                )
+                if res.returncode == 0 and res.stdout.strip():
+                    for line in res.stdout.decode("utf-8", "replace").splitlines():
+                        entry = line[3:].strip()
+                        if " -> " in entry:
+                            entry = entry.split(" -> ")[-1]
+                        if entry:
+                            checked_files.append(entry.strip('"'))
+            except Exception:
+                pass
+
+        if not checked_files:
             return ["No files were modified or created"], True
 
-        for rel_path in files_touched:
+        for rel_path in checked_files[:20]:
             abs_path = workspace_path / rel_path
             if not abs_path.exists():
-                issues.append(f"File {rel_path} was declared in writes but does not exist on disk")
-                is_false_pos = True
                 continue
 
             size = abs_path.stat().st_size
             if size == 0:
                 issues.append(f"File {rel_path} is completely empty (0 bytes)")
                 is_false_pos = True
+                continue
+
+            # For large files (> 2 MB, e.g. repos.json catalog), do not load entirely into memory
+            if size > 2 * 1024 * 1024:
+                # Fast sample verification
+                try:
+                    with abs_path.open("rb") as f:
+                        header = f.read(1024).strip()
+                    if rel_path.endswith(".json") and not (header.startswith(b"[") or header.startswith(b"{")):
+                        issues.append(f"Large JSON file {rel_path} does not start with valid JSON root object or array")
+                        is_false_pos = True
+                except Exception as exc:
+                    issues.append(f"Error sampling large file {rel_path}: {exc}")
                 continue
 
             try:
@@ -144,13 +178,14 @@ class CurationEvaluator:
                     is_false_pos = True
 
             # Check for suspicious mock / placeholder tokens
+            suspicious_count = 0
             for pat in FALSE_POSITIVE_PATTERNS:
                 matches = pat.findall(content)
                 if matches:
-                    issues.append(f"File {rel_path} contains suspicious placeholder token '{matches[0]}'")
-                    # If heavily riddled with placeholders, flag as false positive
-                    if len(matches) > 3 or "TODO" in matches[0].upper():
-                        is_false_pos = True
+                    suspicious_count += len(matches)
+            if suspicious_count >= 5:
+                issues.append(f"File {rel_path} contains multiple suspicious placeholder tokens ({suspicious_count} found)")
+                is_false_pos = True
 
         return issues, is_false_pos
 

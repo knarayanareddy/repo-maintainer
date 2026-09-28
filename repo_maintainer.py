@@ -3817,10 +3817,11 @@ class Maintainer:
                     log=lambda m: _log("{0}: {1}".format(settings.name, m))
                 )
                 _, diff_sample, _ = ws._git("diff", "HEAD")
+                active_files = list(result.writes) or ws.changed_files()
                 verdict = evaluator.evaluate(
                     repo_name=settings.name,
                     workspace_path=ws.path,
-                    files_touched=list(result.writes),
+                    files_touched=active_files,
                     items_summary=[item.to_dict() for item in result.items],
                     diff_text=diff_sample or "",
                 )
@@ -3838,17 +3839,18 @@ class Maintainer:
                         repo_name=settings.name,
                         workspace_path=ws.path,
                         verdict=verdict,
-                        candidate_files=list(result.writes),
+                        candidate_files=active_files,
                         attempt_idx=len(corrector.report.attempts) + 1,
                     )
                     if enriched:
                         problems = list(recipe.verify(ws.path))
                         if not problems:
                             _, diff_sample, _ = ws._git("diff", "HEAD")
+                            active_files = list(result.writes) or ws.changed_files()
                             verdict = evaluator.evaluate(
                                 repo_name=settings.name,
                                 workspace_path=ws.path,
-                                files_touched=list(result.writes),
+                                files_touched=active_files,
                                 items_summary=[item.to_dict() for item in result.items],
                                 diff_text=diff_sample or "",
                             )
