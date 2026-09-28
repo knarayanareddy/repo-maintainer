@@ -582,6 +582,7 @@ class AiArsenalRecipe(CurationRecipe):
         result.note("discovered {0} candidate(s) to consider".format(len(candidates)))
 
         written = 0
+        shipped_paths: List[str] = []
         for candidate in candidates:
             if written >= wanted:
                 break
@@ -606,6 +607,7 @@ class AiArsenalRecipe(CurationRecipe):
                 )
                 continue
             plan.write(relative, self.render_entry(draft))
+            shipped_paths.append(relative)
             result.add(
                 "entry",
                 str(draft["frontmatter"].get("name") or slug),
@@ -616,6 +618,7 @@ class AiArsenalRecipe(CurationRecipe):
                 ),
             )
             written += 1
+        self._shipped_paths = shipped_paths
 
         if written:
             result.llm_used = True
@@ -660,7 +663,14 @@ class AiArsenalRecipe(CurationRecipe):
                 "so the native frontmatter contract was checked"
             )
 
-        for path in self.walk_files(root / CONTENT_GLOB, ".md", limit=3000):
+        target_paths = [root / p for p in getattr(self, "_shipped_paths", [])]
+        if not target_paths:
+            target_paths = [
+                p for p in self.walk_files(root / CONTENT_GLOB, ".md", limit=3000)
+                if "/by-" not in str(p) and not p.name.startswith("_") and not p.name.startswith("index")
+            ]
+
+        for path in target_paths:
             try:
                 data, _body = parse_frontmatter(path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError):
