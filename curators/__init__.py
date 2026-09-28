@@ -29,7 +29,8 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, List, Optional, Type
 
-from . import base, llm
+from . import auto_installer, base, evaluator, llm, self_corrector
+from .auto_installer import auto_install_from_error
 from .base import (
     CheckReport,
     CurationError,
@@ -38,6 +39,8 @@ from .base import (
     CurationResult,
     FilePlan,
 )
+from .evaluator import CurationEvaluator, EvaluationVerdict, evaluate_curation
+from .self_corrector import SelfCorrectionReport, SelfCorrector
 from .ai_arsenal import AiArsenalRecipe
 from .ai_daily import AiDailyRecipe
 from .gitscour import GitscourRecipe
@@ -47,6 +50,15 @@ from .website_design import WebsiteDesignRecipe
 __all__ = [
     "llm",
     "base",
+    "auto_installer",
+    "evaluator",
+    "self_corrector",
+    "auto_install_from_error",
+    "CurationEvaluator",
+    "EvaluationVerdict",
+    "evaluate_curation",
+    "SelfCorrectionReport",
+    "SelfCorrector",
     "CheckReport",
     "CurationError",
     "CurationItem",

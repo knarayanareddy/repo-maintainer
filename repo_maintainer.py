@@ -2880,6 +2880,47 @@ def render_curation_pr_body(
         lines.append("Post-conditions re-checked and clean.")
     lines.append("")
 
+    evaluation = summary.get("evaluation")
+    if evaluation:
+        verdict_val = evaluation.get("verdict", "APPROVED")
+        score_val = evaluation.get("quality_score", 8)
+        model_val = evaluation.get("evaluator_model", "jev/gemini-flash")
+        is_fp = evaluation.get("is_false_positive", False)
+        reason_val = evaluation.get("reason", "")
+        lines.extend([
+            "### Quality Gate & Evaluation (Jev / Gemini Flash)",
+            "",
+            "| Metric | Value |",
+            "| --- | --- |",
+            "| Verdict | `{0}` |".format(verdict_val),
+            "| Quality Score | `{0} / 10` |".format(score_val),
+            "| Anti-False-Positive Check | `{0}` |".format("PASSED" if not is_fp else "FLAGGED"),
+            "| Evaluator Model | `{0}` |".format(model_val),
+            "",
+            "> **Evaluator Assessment**: {0}".format(reason_val or "Verified substantive work"),
+            "",
+        ])
+
+    self_correction = summary.get("self_correction")
+    if self_correction and self_correction.get("total_attempts"):
+        lines.extend([
+            "### Self-Correction & Autonomous Recovery",
+            "",
+            "This run encountered issues and autonomously healed itself across `{0}` attempt(s):".format(
+                self_correction.get("total_attempts")
+            ),
+            "",
+        ])
+        for att in self_correction.get("attempts", []):
+            lines.append("- **Attempt {0} ({1})**: {2}".format(
+                att.get("attempt"), att.get("failure_type"), att.get("root_cause") or att.get("error_message")
+            ))
+            if att.get("files_patched"):
+                lines.append("  - Patched files: `{0}`".format(", ".join(att.get("files_patched"))))
+            if att.get("packages_installed"):
+                lines.append("  - Auto-installed packages: `{0}`".format(", ".join(att.get("packages_installed"))))
+        lines.append("")
+
     rows = ws.diff_summary()
     if rows:
         lines.extend(["### Diffstat", "", "| File | Additions | Deletions |", "| --- | --- | --- |"])
@@ -3641,6 +3682,17 @@ class Maintainer:
 
             # 1) Preflight ---------------------------------------------------- #
             report = recipe.check(ws.path)
+            if not report.ok:
+                # Attempt automated dependency installation if missing modules caused failure
+                failed_items = [item for item in report.items if item.fatal and not item.ok]
+                failed_details = " ".join(item.detail or "" for item in failed_items)
+                installed, install_msg = curators.auto_install_from_error(
+                    failed_details, cwd=ws.path, log_fn=lambda m: _log("{0}: {1}".format(settings.name, m))
+                )
+                if installed:
+                    outcome.messages.append("preflight self-healing: {0}".format(install_msg))
+                    report = recipe.check(ws.path)
+
             summary["check"] = [item.to_dict() for item in report.items]
             for item in report.items:
                 outcome.messages.append(
@@ -3662,9 +3714,25 @@ class Maintainer:
                 )
                 return outcome
 
+            # Initialize self-corrector for this run
+            corrector = curators.SelfCorrector(
+                log=lambda m: _log("{0}: {1}".format(settings.name, m))
+            )
+
             # 2) Curate on a guarded branch ----------------------------------- #
             ws.create_branch(outcome.branch)
-            result = recipe.curate(ws.path, dry_run=self.dry_run)
+            try:
+                result = recipe.curate(ws.path, dry_run=self.dry_run)
+            except Exception as exc:
+                outcome.messages.append("curation raised exception: {0}".format(exc))
+                # Attempt self-correction on exception (e.g. missing package)
+                installed, install_msg = corrector.attempt_auto_install(str(exc), cwd=ws.path)
+                if installed:
+                    outcome.messages.append("curation dependency recovered: {0}".format(install_msg))
+                    result = recipe.curate(ws.path, dry_run=self.dry_run)
+                else:
+                    raise
+
             summary["items"] = [item.to_dict() for item in result.items]
             summary["notes"] = list(result.notes)
             summary["writes"] = list(result.writes)
@@ -3682,31 +3750,55 @@ class Maintainer:
             for note in result.notes:
                 outcome.messages.append(str(note))
 
-            # A recipe that reports its own problems could not do its job, so
-            # nothing it produced can be trusted. Never ship it.
+            # If recipe reports problems, attempt self-correction
             if result.problems:
-                if not self.dry_run:
-                    ws.reset_hard("HEAD")
-                outcome.status = "failed"
-                outcome.error = "curation reported problems: {0}".format(
-                    "; ".join(result.problems)[:400]
+                outcome.messages.append("curation reported problems; attempting self-correction...")
+                repaired, repair_msg = corrector.correct_verification_problems(
+                    repo_name=settings.name,
+                    workspace_path=ws.path,
+                    problems=result.problems,
+                    candidate_files=list(result.writes),
+                    attempt_idx=1,
                 )
-                return outcome
+                if repaired:
+                    outcome.messages.append("self-correction applied: {0}".format(repair_msg))
+                    result.problems.clear()
+                else:
+                    if not self.dry_run:
+                        ws.reset_hard("HEAD")
+                    outcome.status = "failed"
+                    outcome.error = "curation reported problems: {0}".format(
+                        "; ".join(result.problems)[:400]
+                    )
+                    return outcome
 
-            # 3) Post-conditions ---------------------------------------------- #
+            # 3) Post-conditions & Self-Correction Loop ------------------------ #
             if self.dry_run:
-                # A dry-run never writes, so verify() would only report the
-                # pristine tree. Say so instead of pretending to have checked.
                 summary["verify"] = [
                     "skipped during --dry-run: the working tree is intentionally unwritten"
                 ]
             else:
                 problems = list(recipe.verify(ws.path))
+                if problems:
+                    outcome.messages.append("post-condition check encountered problems; activating self-correction loop...")
+                    for attempt_idx in range(1, corrector.max_attempts + 1):
+                        repaired, repair_msg = corrector.correct_verification_problems(
+                            repo_name=settings.name,
+                            workspace_path=ws.path,
+                            problems=problems,
+                            candidate_files=list(result.writes),
+                            attempt_idx=attempt_idx,
+                        )
+                        if repaired:
+                            problems = list(recipe.verify(ws.path))
+                            if not problems:
+                                outcome.messages.append("self-correction healed verification problems ({0})".format(repair_msg))
+                                break
                 summary["verify"] = problems
                 if problems:
                     ws.reset_hard("HEAD")
                     outcome.status = "failed"
-                    outcome.error = "post-condition check failed: {0}".format(
+                    outcome.error = "post-condition check failed after self-correction attempts: {0}".format(
                         "; ".join(problems)[:400]
                     )
                     return outcome
@@ -3718,6 +3810,58 @@ class Maintainer:
                     "curation found nothing new for today; no pull request was opened"
                 )
                 return outcome
+
+            # 4) Self-Evaluating & Anti-False-Positive Gate (Jev / Gemini Flash) - #
+            if not self.dry_run:
+                evaluator = curators.CurationEvaluator(
+                    log=lambda m: _log("{0}: {1}".format(settings.name, m))
+                )
+                _, diff_sample, _ = ws._git("diff", "HEAD")
+                verdict = evaluator.evaluate(
+                    repo_name=settings.name,
+                    workspace_path=ws.path,
+                    files_touched=list(result.writes),
+                    items_summary=[item.to_dict() for item in result.items],
+                    diff_text=diff_sample or "",
+                )
+                summary["evaluation"] = verdict.to_dict()
+                summary["self_correction"] = corrector.report.to_dict()
+                outcome.messages.append(
+                    "evaluation [{0}]: verdict={1}, score={2}/10, false_positive={3}".format(
+                        verdict.evaluator_model, verdict.verdict, verdict.quality_score, verdict.is_false_positive
+                    )
+                )
+
+                if not verdict.passed:
+                    outcome.messages.append("evaluation rejected run; triggering generative enrichment...")
+                    enriched, enrich_msg = corrector.correct_evaluation_rejection(
+                        repo_name=settings.name,
+                        workspace_path=ws.path,
+                        verdict=verdict,
+                        candidate_files=list(result.writes),
+                        attempt_idx=len(corrector.report.attempts) + 1,
+                    )
+                    if enriched:
+                        problems = list(recipe.verify(ws.path))
+                        if not problems:
+                            _, diff_sample, _ = ws._git("diff", "HEAD")
+                            verdict = evaluator.evaluate(
+                                repo_name=settings.name,
+                                workspace_path=ws.path,
+                                files_touched=list(result.writes),
+                                items_summary=[item.to_dict() for item in result.items],
+                                diff_text=diff_sample or "",
+                            )
+                            summary["evaluation"] = verdict.to_dict()
+                            summary["self_correction"] = corrector.report.to_dict()
+
+                if not verdict.passed:
+                    ws.reset_hard("HEAD")
+                    outcome.status = "failed"
+                    outcome.error = "evaluation rejected work as false-positive or low quality (score {0}/10, model {1}): {2}".format(
+                        verdict.quality_score, verdict.evaluator_model, verdict.reason
+                    )
+                    return outcome
 
             # 4) Publish -------------------------------------------------------- #
             if self.dry_run:

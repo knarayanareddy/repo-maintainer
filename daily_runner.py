@@ -261,6 +261,8 @@ def run_repository(
                 outcome["changes"] = len(item.get("changes") or [])
                 outcome["error"] = str(item.get("error") or "")
                 outcome["messages"] = list(item.get("messages") or [])
+                outcome["evaluation"] = (item.get("curation") or {}).get("evaluation")
+                outcome["self_correction"] = (item.get("curation") or {}).get("self_correction")
     # A reported error is authoritative regardless of the child's exit code.
     if outcome.get("error"):
         outcome["status"] = "failed"
@@ -290,17 +292,25 @@ def render_summary_markdown(
         "",
         "## Results",
         "",
-        "| Repository | Status | Recipe | Changes | Branch / PR | Duration |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Repository | Status | Recipe | Changes | Evaluation (Jev/Gemini) | Branch / PR | Duration |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for item in results:
         where = item.get("pr_url") or item.get("branch") or "-"
+        ev = item.get("evaluation") or {}
+        if ev:
+            ev_str = "`{0}` ({1}/10)".format(ev.get("verdict", "APPROVED"), ev.get("quality_score", "-"))
+        elif item.get("self_correction") and item["self_correction"].get("healed"):
+            ev_str = "Healed ({0} att)".format(item["self_correction"].get("total_attempts", 1))
+        else:
+            ev_str = "-"
         lines.append(
-            "| {0} | {1} | {2} | {3} | {4} | {5}s |".format(
+            "| {0} | {1} | {2} | {3} | {4} | {5} | {6}s |".format(
                 item.get("repo", "?"),
                 item.get("status", "?"),
                 item.get("recipe") or "-",
                 item.get("changes", 0),
+                ev_str,
                 where,
                 item.get("duration_seconds", 0),
             )
@@ -810,11 +820,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print("Daily run summary ({0})".format(summary["generated_at"]))
         print("=" * 78)
         for item in results:
+            eval_info = ""
+            ev = item.get("evaluation") or {}
+            sc = item.get("self_correction") or {}
+            if ev:
+                eval_info = " [eval: {0}/10 {1} via {2}]".format(
+                    ev.get("quality_score", "-"),
+                    ev.get("verdict", "APPROVED"),
+                    ev.get("evaluator_model", "jev/gemini"),
+                )
+            elif sc and sc.get("healed"):
+                eval_info = " [self-healed ({0} att)]".format(sc.get("total_attempts", 1))
             print(
-                "{0:<45} {1:<12} {2}".format(
+                "{0:<40} {1:<10} {2}{3}".format(
                     item.get("repo", "?"),
                     item.get("status", "?"),
                     item.get("pr_url") or item.get("branch") or item.get("error") or "",
+                    eval_info,
                 )
             )
         print("")
