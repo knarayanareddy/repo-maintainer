@@ -162,7 +162,7 @@ class GeminiClient:
     @property
     def available(self) -> bool:
         """Whether a call could plausibly succeed right now."""
-        return bool(self.enabled and self.api_key)
+        return bool(self.enabled and (self.api_key or bool(load_openrouter_keys())))
 
     def log(self, message: str) -> None:
         """Emit a progress line through the injected logger."""
