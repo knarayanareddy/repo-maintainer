@@ -189,15 +189,114 @@ class CurationEvaluator:
 
         return issues, is_false_pos
 
-    # -- Jev Evaluation (TypeSafe / OpenRouter) ------------------------------ #
+    # -- Jev Evaluation (Native TypeSafe & OpenRouter) ---------------------- #
 
-    def _evaluate_with_jev(self, payload_summary: str) -> Optional[EvaluationVerdict]:
-        """Query TypeSafe Jev model via OpenRouter or TypeSafe endpoint."""
-        key = self.openrouter_key or self.typesafe_key
+    def _evaluate_with_typesafe_native(self, payload_summary: str) -> Optional[EvaluationVerdict]:
+        """Query TypeSafe Jev native System One endpoint (api.typesafe.ai/v1/systemone)."""
+        key = self.typesafe_key
         if not key:
             return None
 
-        self.log("invoking TypeSafe Jev decision layer...")
+        self.log("invoking TypeSafe Jev native System One decision model...")
+        endpoint = "https://api.typesafe.ai/v1/systemone"
+
+        body = {
+            "model": "jev-latest",
+            "state": payload_summary[:8000],
+            "questions": {
+                "is_false_positive": {
+                    "type": "noul",
+                    "instructions": "Does this work contain hollow stubs, 0-byte files, or superficial mock placeholders that give a false impression of success?",
+                    "criteria": {
+                        "true": "Contains hollow mock stubs, unfinished TODOs, or empty files",
+                        "false": "Substantive, functional, real code or data"
+                    }
+                },
+                "verdict": {
+                    "type": "choice",
+                    "instructions": "What is the release decision for this curation pull request?",
+                    "criteria": {
+                        "APPROVED": "High quality, genuine code ready for merge",
+                        "NEEDS_CORRECTION": "Has issues, missing fields, or stub sections that need self-correction",
+                        "REJECTED": "Completely invalid or broken"
+                    }
+                },
+                "quality_score": {
+                    "type": "score",
+                    "instructions": "Rate the overall quality and completeness of this work on a scale from 1 to 5.",
+                    "criteria": [
+                        "1 - Broken or zero-byte stubs",
+                        "2 - Shallow placeholder content",
+                        "3 - Basic minimal implementation",
+                        "4 - High quality substantive content",
+                        "5 - Exceptional production-grade work"
+                    ]
+                }
+            }
+        }
+
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps(body).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "User-Agent": "repo-maintainer-jev/1.0",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            answers = data.get("answers", {})
+            fp_answer = answers.get("is_false_positive", {})
+            verdict_answer = answers.get("verdict", {})
+            score_answer = answers.get("quality_score", {})
+
+            is_fp = float(fp_answer.get("noul", 0.0)) >= 0.5
+            verdict_str = str(verdict_answer.get("choice", "NEEDS_CORRECTION")).upper()
+            confidence = float(verdict_answer.get("confidence", 0.0))
+            raw_score = float(score_answer.get("score", 2.5))
+            scaled_score = max(1, min(10, round((raw_score + 1) * 2)))
+            model_id = str(data.get("model", "jev-latest"))
+
+            issues: List[str] = []
+            if is_fp:
+                issues.append(f"Jev flagged output as likely false-positive (prob={fp_answer.get('noul', 0.0):.2f})")
+            if scaled_score < 6:
+                issues.append(f"Jev assessed quality score as {scaled_score}/10 (below 6/10 floor)")
+
+            reason_str = (
+                f"Jev decision: {verdict_str} (confidence: {confidence:.2f}, "
+                f"false-positive prob: {fp_answer.get('noul', 0.0):.2f}, "
+                f"quality: {scaled_score}/10)"
+            )
+            self.log(f"Jev result: {verdict_str}, score={scaled_score}/10, model={model_id}")
+
+            return EvaluationVerdict(
+                verdict=verdict_str,
+                is_false_positive=is_fp,
+                quality_score=scaled_score,
+                reason=reason_str,
+                issues=issues,
+                evaluator_model=f"typesafe/{model_id}",
+            )
+        except urllib.error.HTTPError as exc:
+            self.log(f"TypeSafe Jev HTTP {exc.code} ({exc.reason}); cascading to OpenRouter/Gemini")
+            return None
+        except Exception as exc:
+            self.log(f"TypeSafe Jev call failed: {exc}; cascading to OpenRouter/Gemini")
+            return None
+
+    def _evaluate_with_openrouter_jev(self, payload_summary: str) -> Optional[EvaluationVerdict]:
+        """Query TypeSafe Jev model via OpenRouter."""
+        key = self.openrouter_key
+        if not key:
+            return None
+
+        self.log("invoking TypeSafe Jev via OpenRouter...")
         endpoint = "https://openrouter.ai/api/v1/chat/completions"
         model = "typesafe/jev-router"
 
@@ -248,15 +347,15 @@ class CurationEvaluator:
                 verdict=verdict_str,
                 is_false_positive=bool(parsed.get("is_false_positive", False)),
                 quality_score=int(parsed.get("quality_score", 5)),
-                reason=str(parsed.get("reason", "Evaluated by Jev")),
+                reason=str(parsed.get("reason", "Evaluated by Jev via OpenRouter")),
                 issues=list(parsed.get("issues", [])),
-                evaluator_model="typesafe/jev-router",
+                evaluator_model="openrouter/typesafe-jev",
             )
         except urllib.error.HTTPError as exc:
             self.log(f"Jev OpenRouter HTTP {exc.code} ({exc.reason}); cascading to Gemini Flash")
             return None
         except Exception as exc:
-            self.log(f"Jev call failed: {exc}; cascading to Gemini Flash")
+            self.log(f"Jev OpenRouter call failed: {exc}; cascading to Gemini Flash")
             return None
 
     # -- Gemini Flash Evaluation Cascade ------------------------------------ #
@@ -346,12 +445,19 @@ class CurationEvaluator:
             f"Content Sample:\n{sample_diff[:8000]}"
         )
 
-        # 3. Try Jev
-        jev_verdict = self._evaluate_with_jev(payload_summary)
-        if jev_verdict is not None:
+        # 3. Try Native TypeSafe Jev System One
+        native_jev = self._evaluate_with_typesafe_native(payload_summary)
+        if native_jev is not None:
             if heuristic_issues:
-                jev_verdict.issues.extend(heuristic_issues)
-            return jev_verdict
+                native_jev.issues.extend(heuristic_issues)
+            return native_jev
+
+        # 3b. Try OpenRouter Jev
+        router_jev = self._evaluate_with_openrouter_jev(payload_summary)
+        if router_jev is not None:
+            if heuristic_issues:
+                router_jev.issues.extend(heuristic_issues)
+            return router_jev
 
         # 4. Cascade to Gemini Flash
         gemini_verdict = self._evaluate_with_gemini(payload_summary)
