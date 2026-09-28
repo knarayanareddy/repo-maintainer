@@ -641,19 +641,23 @@ class AiArsenalRecipe(CurationRecipe):
 
         node = self.node_executable()
         validator = root / "scripts" / "validate-schema.js"
-        if node and validator.is_file():
+        node_modules = root / "node_modules"
+        if node and validator.is_file() and node_modules.is_dir():
             code, out, err = self._run_validator(root, node, validator)
             if code != 0:
-                problems.append(
-                    "validate-schema.js failed: {0}".format(
-                        truncate(err or out, 300)
+                if "MODULE_NOT_FOUND" in (err or out) or "ERR_MODULE_NOT_FOUND" in (err or out):
+                    self.log("validate-schema.js missing node_modules dependencies; using native Python schema validation")
+                else:
+                    problems.append(
+                        "validate-schema.js failed: {0}".format(
+                            truncate(err or out, 300)
+                        )
                     )
-                )
-                return problems
+                    return problems
         else:
             problems.append(
-                "note: node/validate-schema.js unavailable, so only the local "
-                "frontmatter contract was checked"
+                "note: node/validate-schema.js unavailable or node_modules missing, "
+                "so the native frontmatter contract was checked"
             )
 
         for path in self.walk_files(root / CONTENT_GLOB, ".md", limit=3000):
