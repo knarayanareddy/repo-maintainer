@@ -1184,7 +1184,7 @@ class GitWorkspace:
             return False
         args = ["push", "--set-upstream"]
         if force:
-            args.append("--force-with-lease")
+            args.append("--force")
         args += ["origin", "{0}:refs/heads/{0}".format(branch)]
         code, out, err = self._git(*args, timeout=DEFAULT_GIT_TIMEOUT * 2)
         if code != 0:
