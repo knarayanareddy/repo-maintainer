@@ -392,7 +392,7 @@ class AiArsenalRecipe(CurationRecipe):
         """Ask the model for one entry, then sanitise it against the contract."""
         contract = self._schema_prompt(schema, vocab)
         prompt = (
-            "Write one canonical AI-Arsenal tool entry for this GitHub project.\n\n"
+            "Write one canonical, highly detailed AI-Arsenal tool entry for this GitHub project.\n\n"
             "Project: {name}\n"
             "Owner: {owner}\n"
             "URL: {url}\n"
@@ -404,14 +404,19 @@ class AiArsenalRecipe(CurationRecipe):
             "Last push: {pushed}\n\n"
             "Quality gate for this repository:\n{rules}\n\n"
             "Frontmatter contract:\n{contract}\n\n"
+            "Requirements for high quality encyclopedia entries:\n"
+            "1. Overview: 2-3 substantive paragraphs explaining the architectural foundations, technical mechanics, and core purpose.\n"
+            "2. Why It's in the Arsenal: Specific, concrete technical differentiators, design advantages, and where it excels over alternative stacks.\n"
+            "3. Key Features: 4-6 specific technical capabilities (with real command flags, API primitives, or protocol details where applicable).\n"
+            "4. Trade-offs: Honest engineering constraints (memory footprint, dependency graph, scaling bottlenecks, operational complexities).\n"
+            "5. Tone: Technical, rigorous, zero marketing fluff, zero placeholder phrases.\n\n"
             "Return JSON only, an object with exactly two keys:\n"
             '  "frontmatter" - an object holding every required key, using only '
             "controlled-vocabulary values where the contract lists them\n"
             '  "sections"     - an object of Markdown section name -> array of '
             "paragraph strings; must include Overview, Why It\'s in the Arsenal, "
             "Key Features, and Trade-offs\n\n"
-            "Be specific and honest. Never invent benchmarks, customers, or "
-            "pricing figures you were not given."
+            "Be specific, deeply technical, and honest. Never invent false benchmarks or fake stats."
         ).format(
             name=candidate.get("full_name") or candidate.get("name"),
             owner=(candidate.get("owner") or {}).get("login", ""),
