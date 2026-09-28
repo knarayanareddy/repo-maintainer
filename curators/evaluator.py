@@ -351,8 +351,10 @@ class CurationEvaluator:
             return None
 
         self.log("invoking TypeSafe Jev via OpenRouter...")
-        endpoint = "https://openrouter.ai/api/v1/chat/completions"
-        model = "typesafe/jev-router"
+        models_to_try = [
+            "stealth/space-bunny-alpha",
+            "meta-llama/llama-3.3-70b-instruct:free",
+        ]
 
         system_prompt = (
             "You are Jev, a deterministic System One decision model. "
@@ -367,44 +369,48 @@ class CurationEvaluator:
             "- issues: array of strings naming specific deficiencies if any"
         )
 
-        body = {
-            "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": payload_summary},
-            ],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.1,
-        }
+        for model in models_to_try:
+            body = {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": payload_summary},
+                ],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.1,
+            }
 
-        req = urllib.request.Request(
-            endpoint,
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {key}",
-                "Content-Type": "application/json",
-                "User-Agent": "repo-maintainer-jev/1.0",
-            },
-            method="POST",
-        )
-
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-            choice = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-            parsed = json.loads(choice)
-            verdict_str = str(parsed.get("verdict", "NEEDS_CORRECTION")).upper()
-            if verdict_str not in ("APPROVED", "NEEDS_CORRECTION", "REJECTED"):
-                verdict_str = "APPROVED" if parsed.get("quality_score", 0) >= 6 else "NEEDS_CORRECTION"
-
-            return EvaluationVerdict(
-                verdict=verdict_str,
-                is_false_positive=bool(parsed.get("is_false_positive", False)),
-                quality_score=int(parsed.get("quality_score", 5)),
-                reason=str(parsed.get("reason", "Evaluated by Jev via OpenRouter")),
-                issues=list(parsed.get("issues", [])),
-                evaluator_model="openrouter/typesafe-jev",
+            req = urllib.request.Request(
+                endpoint,
+                data=json.dumps(body).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {key}",
+                    "Content-Type": "application/json",
+                    "User-Agent": "repo-maintainer-jev/1.0",
+                },
+                method="POST",
             )
+
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                choice = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                parsed = json.loads(choice)
+                verdict_str = str(parsed.get("verdict", "NEEDS_CORRECTION")).upper()
+                if verdict_str not in ("APPROVED", "NEEDS_CORRECTION", "REJECTED"):
+                    verdict_str = "APPROVED" if parsed.get("quality_score", 0) >= 6 else "NEEDS_CORRECTION"
+
+                return EvaluationVerdict(
+                    verdict=verdict_str,
+                    is_false_positive=bool(parsed.get("is_false_positive", False)),
+                    quality_score=int(parsed.get("quality_score", 5)),
+                    reason=str(parsed.get("reason", "Evaluated by Jev via OpenRouter")),
+                    issues=list(parsed.get("issues", [])),
+                    evaluator_model=f"openrouter/{model}",
+                )
+            except Exception as exc:
+                self.log(f"Jev OpenRouter {model} failed: {exc}; trying next")
+                continue
         except urllib.error.HTTPError as exc:
             self.log(f"Jev OpenRouter HTTP {exc.code} ({exc.reason}); cascading to Gemini Flash")
             return None
