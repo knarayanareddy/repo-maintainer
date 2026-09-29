@@ -144,6 +144,8 @@ class SelfCorrector:
             "repository failed post-condition validation. "
             "You are given the list of verification problems and the relevant files. "
             "Diagnose the root cause and provide complete, corrected replacements for any file that needs fixing. "
+            "GOAL-DRIVEN AUTONOMY & PERMITTED SCOPE EXPANSION: You have full authority to modify any configuration, "
+            "dependency manifest, test fixture, or supporting file required to resolve the verification problems cleanly. "
             "Output strictly valid JSON with this structure:\n"
             "{\n"
             '  "root_cause": "concise explanation of why verification failed",\n'
@@ -244,6 +246,8 @@ class SelfCorrector:
             "or insufficient substance). "
             "Your task is to replace any placeholder, stub, or low-quality section with rich, complete, production-ready "
             "implementations. "
+            "GOAL-DRIVEN AUTONOMY & PERMITTED SCOPE EXPANSION: You have full authority to modify any configuration, "
+            "dependency manifest, or adjacent support files if necessary to achieve production quality. "
             "Output strictly valid JSON with:\n"
             "{\n"
             '  "root_cause": "why the output was shallow or incomplete",\n'

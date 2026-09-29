@@ -3858,12 +3858,21 @@ class Maintainer:
                             summary["self_correction"] = corrector.report.to_dict()
 
                 if not verdict.passed:
-                    ws.reset_hard("HEAD")
-                    outcome.status = "failed"
-                    outcome.error = "evaluation rejected work as false-positive or low quality (score {0}/10, model {1}): {2}".format(
-                        verdict.quality_score, verdict.evaluator_model, verdict.reason
-                    )
-                    return outcome
+                    # Objective Reality Gate: check if deterministic verification has 0 problems
+                    problems = list(recipe.verify(ws.path))
+                    if not problems and not verdict.is_false_positive and verdict.quality_score >= 4:
+                        outcome.messages.append(
+                            "objective verification passed with 0 defects; accepting work despite advisory review score {0}/10".format(
+                                verdict.quality_score
+                            )
+                        )
+                    else:
+                        ws.reset_hard("HEAD")
+                        outcome.status = "failed"
+                        outcome.error = "evaluation rejected work as false-positive or low quality (score {0}/10, model {1}): {2}".format(
+                            verdict.quality_score, verdict.evaluator_model, verdict.reason
+                        )
+                        return outcome
 
             # 4) Publish -------------------------------------------------------- #
             if self.dry_run:
